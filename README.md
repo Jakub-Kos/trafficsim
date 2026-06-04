@@ -1,5 +1,8 @@
 # Traffic Simulation
 
+[![Build](https://github.com/Jakub-Kos/trafficsim/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Jakub-Kos/trafficsim/actions/workflows/docker-publish.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A C++23 road traffic simulation engine built for a bachelor's thesis. It loads real OpenStreetMap data, simulates vehicles using the **Intelligent Driver Model (IDM)**, and exposes a REST + WebSocket API consumed by a WebGL frontend. The primary research use case is **road network optimization** — finding optimal road closures, construction schedules, or pedestrianization candidates by running the simulation as a fitness function.
 
 ```mermaid
