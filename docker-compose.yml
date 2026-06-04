@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ${IMAGE_REPO:-local}/trafficsim-backend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REPO:-ghcr.io/jakub-kos}/trafficsim-backend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${IMAGE_REPO:-local}/trafficsim-frontend:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REPO:-ghcr.io/jakub-kos}/trafficsim-frontend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   db:
-    image: ${IMAGE_REPO:-local}/trafficsim-db:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REPO:-ghcr.io/jakub-kos}/trafficsim-db:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.db

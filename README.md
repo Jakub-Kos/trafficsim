@@ -118,27 +118,20 @@ This is the easiest way to run the project on any machine with Docker installed.
 
 2. Download `docker-compose.yml` from this repository into that folder.
 
-3. In the same folder create a file named `.env`:
-
-```
-IMAGE_REPO=kosaak
-```
-
-This tells Compose where to pull the images from. It will download:
-- `kosaak/trafficsim-backend:latest`
-- `kosaak/trafficsim-frontend:latest`
-- `kosaak/trafficsim-db:latest`
-
-To pin a specific release instead of latest, add `IMAGE_TAG=v1.0.0` to the `.env` file.
-
-4. Pull and start:
+3. Pull and start (the images are pulled automatically from the default registry — no `.env` needed unless you want to pin a specific release):
 
 ```bash
 docker compose pull
 docker compose up
 ```
 
-5. Open **http://localhost:8080** in your browser.
+To pin a specific release, create a `.env` file in the same folder with:
+
+```
+IMAGE_TAG=v1.0.0
+```
+
+4. Open **http://localhost:8080** in your browser.
 
 To stop: `Ctrl+C`, or `docker-compose down` to also remove containers.
 
