@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>TrafficSim</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --c-bg:          #080c12;
+            --c-sidebar:     #0d1117;
+            --c-surface:     #0f1520;
+            --c-surface2:    #141d2b;
+            --c-border:      rgba(255,255,255,0.07);
+            --c-border-hi:   rgba(0,200,255,0.20);
+            --c-accent:      #00c8f0;
+            --c-accent-dim:  rgba(0,200,240,0.10);
+            --c-ok:          #00e87a;
+            --c-warn:        #ffaa22;
+            --c-danger:      #ff3355;
+            --c-text:        #94a3b8;
+            --c-text-hi:     #e2e8f0;
+            --c-text-dim:    #334155;
+            --radius:        10px;
+            --blur:          blur(20px) saturate(1.4);
+        }
+
+        html, body {
+            height: 100%; background: var(--c-bg);
+            color: var(--c-text);
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 13px; overflow: hidden;
+        }
+
+        /* ── Layout ───────────────────────────────────────────────────── */
+        #app {
+            display: flex; height: 100vh;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 220px; flex-shrink: 0;
+            background: var(--c-sidebar);
+            border-right: 1px solid var(--c-border);
+            display: flex; flex-direction: column;
+            padding: 0;
+        }
+
+        .sidebar-logo {
+            display: flex; align-items: center; gap: 10px;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid var(--c-border);
+        }
+        .logo-icon {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: #fff; font-weight: 700;
+            flex-shrink: 0;
+        }
+        .logo-text { font-size: 14px; font-weight: 700; color: var(--c-text-hi); letter-spacing: 0.3px; }
+        .logo-sub  { font-size: 10px; color: var(--c-text-dim); margin-top: 1px; }
+
+        .sidebar-nav { padding: 12px 10px; flex: 1; }
+        .nav-item {
+            display: flex; align-items: center; gap: 9px;
+            padding: 8px 12px; border-radius: 7px;
+            cursor: pointer; transition: background 0.15s, color 0.15s;
+            color: var(--c-text); font-size: 12.5px;
+            text-decoration: none;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: var(--c-text-hi); }
+        .nav-item.active { background: var(--c-accent-dim); color: var(--c-accent); }
+        .nav-icon { font-size: 14px; width: 18px; text-align: center; }
+
+        .sidebar-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--c-border);
+            font-size: 11px; color: var(--c-text-dim);
+        }
+
+        /* Main content */
+        #content {
+            flex: 1; overflow-y: auto;
+            background: var(--c-bg);
+            display: flex; flex-direction: column;
+        }
+
+        /* Content header */
+        .content-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 28px 32px 20px;
+            border-bottom: 1px solid var(--c-border);
+            flex-shrink: 0;
+        }
+        .content-header h1 { font-size: 20px; font-weight: 700; color: var(--c-text-hi); }
+
+        /* Buttons */
+        .btn-primary {
+            display: flex; align-items: center; gap: 7px;
+            padding: 8px 18px; border-radius: 7px;
+            background: var(--c-accent); color: #050d14;
+            border: none; font-size: 12.5px; font-weight: 600;
+            cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+            font-family: inherit;
+        }
+        .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-ghost {
+            padding: 7px 14px; border-radius: 7px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--c-border);
+            color: var(--c-text); font-size: 12px; cursor: pointer;
+            transition: all 0.15s; font-family: inherit;
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); color: var(--c-text-hi); }
+        .btn-danger {
+            padding: 6px 12px; border-radius: 6px;
+            background: rgba(255,50,85,0.08);
+            border: 1px solid rgba(255,50,85,0.2);
+            color: #ff6080; font-size: 11px; cursor: pointer;
+            transition: all 0.15s; font-family: inherit;
+        }
+        .btn-danger:hover { background: rgba(255,50,85,0.15); border-color: rgba(255,50,85,0.4); }
+
+        /* ── Project grid ──────────────────────────────────────────────── */
+        #projectsWrap {
+            padding: 24px 32px;
+            flex: 1;
+        }
+
+        #projectGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        /* Project card */
+        .proj-card {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+            position: relative;
+        }
+        .proj-card:hover {
+            border-color: rgba(255,255,255,0.12);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            transform: translateY(-2px);
+        }
+        .proj-card:hover .card-open-overlay { opacity: 1; }
+
+        /* Card gradient header */
+        .card-thumb {
+            height: 110px;
+            position: relative;
+            overflow: hidden;
+        }
+        .card-thumb-grid {
+            position: absolute; inset: 0;
+            opacity: 0.18;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .card-thumb-dots {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .card-thumb-icon {
+            font-size: 32px; opacity: 0.5;
+        }
+        .card-no-map-badge {
+            position: absolute; bottom: 8px; right: 8px;
+            font-size: 9px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.8px; padding: 3px 6px; border-radius: 4px;
+            background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Open overlay on hover */
+        .card-open-overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        .card-open-label {
+            background: var(--c-accent); color: #050d14;
+            font-size: 12px; font-weight: 700;
+            padding: 8px 22px; border-radius: 6px;
+        }
+
+        /* Card body */
+        .card-body {
+            padding: 12px 14px 10px;
+        }
+        .card-name {
+            font-size: 13px; font-weight: 600; color: var(--c-text-hi);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-bottom: 3px;
+        }
+        .card-desc {
+            font-size: 11px; color: var(--c-text-dim);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            min-height: 15px; margin-bottom: 8px;
+        }
+        .card-footer {
+            display: flex; align-items: center; justify-content: space-between;
+            padding-top: 8px;
+            border-top: 1px solid var(--c-border);
+        }
+        .card-date { font-size: 10px; color: var(--c-text-dim); }
+        .card-actions { display: flex; gap: 4px; }
+        .card-actions button { opacity: 0; transition: opacity 0.15s; }
+        .proj-card:hover .card-actions button { opacity: 1; }
+
+        /* Empty state */
+        #emptyState {
+            display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 20px; padding: 80px 20px; text-align: center;
+            color: var(--c-text-dim);
+        }
+        #emptyState.show { display: flex; }
+        .empty-icon { font-size: 48px; opacity: 0.25; }
+        .empty-title { font-size: 18px; font-weight: 600; color: var(--c-text); }
+        .empty-sub { font-size: 13px; max-width: 320px; line-height: 1.6; }
+
+        /* Loading / error state */
+        #loadMsg { padding: 24px 32px; color: var(--c-text-dim); font-size: 12px; }
+
+        /* ── Modal ─────────────────────────────────────────────────────── */
+        #modalOverlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(6px);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        #modalOverlay.show { opacity: 1; pointer-events: all; }
+
+        #modal {
+            width: 100%; max-width: 480px;
+            background: #0f1520;
+            border: 1px solid var(--c-border);
+            border-radius: 14px;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+            overflow: hidden;
+            transform: translateY(16px);
+            transition: transform 0.2s;
+        }
+        #modalOverlay.show #modal { transform: translateY(0); }
+
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 18px 22px 14px;
+            border-bottom: 1px solid var(--c-border);
+        }
+        .modal-title { font-size: 16px; font-weight: 700; color: var(--c-text-hi); }
+        .modal-close {
+            width: 28px; height: 28px; border-radius: 6px;
+            background: rgba(255,255,255,0.05); border: 1px solid var(--c-border);
+            color: var(--c-text-dim); font-size: 16px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .modal-close:hover { background: rgba(255,50,50,0.15); color: #ff6070; border-color: rgba(255,50,50,0.3); }
+
+        .modal-body { padding: 20px 22px; }
+
+        .form-group { margin-bottom: 18px; }
+        .form-label {
+            display: block; font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.8px;
+            color: var(--c-text-dim); margin-bottom: 7px;
+        }
+        .form-input {
+            width: 100%; padding: 10px 12px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--c-border);
+            border-radius: 7px; color: var(--c-text-hi);
+            font-size: 13px; font-family: inherit;
+            transition: border-color 0.15s, background 0.15s;
+            outline: none;
+        }
+        .form-input:focus { border-color: var(--c-border-hi); background: rgba(0,200,240,0.04); }
+        .form-input::placeholder { color: var(--c-text-dim); }
+
+        /* Map source selector */
+        .source-options { display: flex; flex-direction: column; gap: 8px; }
+        .source-opt {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px; border-radius: 8px;
+            border: 1px solid var(--c-border);
+            cursor: pointer; transition: all 0.15s;
+            background: rgba(255,255,255,0.02);
+        }
+        .source-opt:hover { border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }
+        .source-opt.selected { border-color: var(--c-border-hi); background: var(--c-accent-dim); }
+        .source-opt-icon {
+            width: 34px; height: 34px; border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; flex-shrink: 0;
+        }
+        .source-opt-text { flex: 1; }
+        .source-opt-title { font-size: 12.5px; font-weight: 600; color: var(--c-text-hi); margin-bottom: 2px; }
+        .source-opt-desc  { font-size: 11px; color: var(--c-text-dim); line-height: 1.4; }
+        .source-opt-radio {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid var(--c-text-dim);
+            flex-shrink: 0; transition: border-color 0.15s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .source-opt.selected .source-opt-radio {
+            border-color: var(--c-accent);
+            background: var(--c-accent);
+            box-shadow: 0 0 0 3px var(--c-accent-dim);
+        }
+        .source-opt.selected .source-opt-radio::after {
+            content: ''; width: 6px; height: 6px; background: #050d14; border-radius: 50%;
+        }
+
+        /* Upload section (shown when upload is selected) */
+        #uploadSection {
+            display: none; margin-top: 12px;
+            padding: 12px 14px;
+            background: rgba(255,255,255,0.02);
+            border: 1px dashed var(--c-border);
+            border-radius: 7px;
+        }
+        #uploadSection.show { display: flex; align-items: center; gap: 10px; }
+        #fileNameDisplay { font-size: 11px; color: var(--c-text-dim); flex: 1; }
+
+        /* Modal status */
+        #modalStatus { margin-top: 12px; font-size: 12px; min-height: 18px; }
+        #modalStatus.ok  { color: var(--c-ok); }
+        #modalStatus.err { color: var(--c-danger); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            display: inline-block; width: 11px; height: 11px;
+            border: 2px solid rgba(0,200,255,0.2); border-top-color: var(--c-accent);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            vertical-align: middle; margin-right: 5px;
+        }
+
+        .modal-footer {
+            display: flex; justify-content: flex-end; gap: 10px;
+            padding: 14px 22px 18px;
+            border-top: 1px solid var(--c-border);
+        }
+
+        /* ── Scrollbar ─────────────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+        /* ── Project loading overlay ───────────────────────────────────── */
+        #projLoadOverlay {
+            position: fixed; inset: 0; z-index: 300;
+            background: rgba(8,12,18,0.96);
+            backdrop-filter: blur(8px);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 0;
+        }
+        #projLoadOverlay.show { display: flex; }
+        #projLoadBox {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 16px; max-width: 340px; text-align: center;
+        }
+        .proj-load-spinner {
+            width: 44px; height: 44px;
+            border: 3px solid rgba(0,200,255,0.12);
+            border-top-color: var(--c-accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #projLoadName  { font-size: 18px; font-weight: 700; color: var(--c-text-hi); }
+        #projLoadStep  { font-size: 13px; color: var(--c-text); }
+        #projLoadMeta  { font-size: 11px; color: var(--c-text-dim); font-family: monospace; }
+        #projLoadTimer { font-size: 22px; font-weight: 700; color: var(--c-accent); font-family: monospace; }
+        #projLoadCancel {
+            margin-top: 8px; padding: 6px 18px; border-radius: 6px; font-size: 12px;
+            background: transparent; border: 1px solid var(--c-border);
+            color: var(--c-text-dim); cursor: pointer; font-family: inherit;
+            transition: all 0.15s;
+        }
+        #projLoadCancel:hover { color: var(--c-danger); border-color: rgba(255,51,85,0.3); }
+
+        /* ── Confirm dialog overlay ────────────────────────────────────── */
+        #confirmOverlay {
+            position: fixed; inset: 0; z-index: 200;
+            background: rgba(0,0,0,0.65);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.15s;
+        }
+        #confirmOverlay.show { opacity: 1; pointer-events: all; }
+        #confirmBox {
+            width: 340px; background: #0f1520;
+            border: 1px solid var(--c-border); border-radius: 12px;
+            padding: 22px 24px; box-shadow: 0 16px 48px rgba(0,0,0,0.65);
+        }
+        #confirmBox h3 { font-size: 15px; color: var(--c-text-hi); margin-bottom: 8px; }
+        #confirmBox p  { font-size: 12px; color: var(--c-text); line-height: 1.5; margin-bottom: 18px; }
+        .confirm-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon">◈</div>
+            <div>
+                <div class="logo-text">TrafficSim</div>
+                <div class="logo-sub">Traffic Simulation Platform</div>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a class="nav-item active" href="/">
+                <span class="nav-icon">⊞</span> Projects
+            </a>
+        </nav>
+        <div class="sidebar-footer">v0.1 · Local Server</div>
+    </aside>
+
+    <!-- Main content -->
+    <main id="content">
+        <div class="content-header">
+            <h1>Projects</h1>
+            <button class="btn-primary" id="btnNewProject">
+                <span>+</span> New Project
+            </button>
+        </div>
+
+        <div id="projectsWrap">
+            <div id="loadMsg">Loading projects…</div>
+            <div id="projectGrid"></div>
+            <div id="emptyState">
+                <div class="empty-icon">◈</div>
+                <div class="empty-title">No projects yet</div>
+                <div class="empty-sub">Create a new project to start simulating traffic. Each project stores your map data and settings.</div>
+                <button class="btn-primary" id="btnNewProjectEmpty"><span>+</span> Create First Project</button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- ─── New Project Modal ────────────────────────────────────────────────────── -->
+<div id="modalOverlay">
+    <div id="modal">
+        <div class="modal-header">
+            <span class="modal-title">New Project</span>
+            <button class="modal-close" id="modalClose">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label" for="projName">Project Name</label>
+                <input class="form-input" id="projName" type="text" placeholder="My City" autocomplete="off" maxlength="64" />
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="projDesc">Description <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+                <input class="form-input" id="projDesc" type="text" placeholder="e.g. Prague city centre, rush hour" maxlength="128" />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">Map Source</label>
+                <div class="source-options">
+                    <div class="source-opt selected" data-source="default">
+                        <div class="source-opt-icon" style="background:rgba(0,200,240,0.1);color:#00c8f0">🗺</div>
+                        <div class="source-opt-text">
+                            <div class="source-opt-title">Default Map</div>
+                            <div class="source-opt-desc">Use the pre-configured map from simulation.json</div>
+                        </div>
+                        <div class="source-opt-radio"></div>
+                    </div>
+                    <div class="source-opt" data-source="upload">
+                        <div class="source-opt-icon" style="background:rgba(255,170,34,0.1);color:#ffaa22">📁</div>
+                        <div class="source-opt-text">
+                            <div class="source-opt-title">Upload OSM File</div>
+                            <div class="source-opt-desc">Upload a .osm file exported from OpenStreetMap</div>
+                        </div>
+                        <div class="source-opt-radio"></div>
+                    </div>
+                    <div class="source-opt" data-source="select">
+                        <div class="source-opt-icon" style="background:rgba(0,232,122,0.1);color:#00e87a">🌍</div>
+                        <div class="source-opt-text">
+                            <div class="source-opt-title">Select from Map</div>
+                            <div class="source-opt-desc">Click tiles on an interactive map to download road data</div>
+                        </div>
+                        <div class="source-opt-radio"></div>
+                    </div>
+                </div>
+
+                <!-- Upload file picker (shown when "upload" is selected) -->
+                <div id="uploadSection">
+                    <button class="btn-ghost" id="btnChooseFile" type="button">Choose file…</button>
+                    <span id="fileNameDisplay">No file chosen</span>
+                </div>
+            </div>
+
+            <div id="modalStatus"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-ghost" id="btnCancelModal">Cancel</button>
+            <button class="btn-primary" id="btnCreate">Create Project →</button>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm delete dialog -->
+<div id="confirmOverlay">
+    <div id="confirmBox">
+        <h3 id="confirmTitle">Delete Project?</h3>
+        <p id="confirmMsg">This will permanently delete the project and all its data.</p>
+        <div class="confirm-btns">
+            <button class="btn-ghost" id="confirmCancel">Cancel</button>
+            <button class="btn-danger" id="confirmOk">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Project loading overlay (shown while backend parses the map) -->
+<div id="projLoadOverlay">
+    <div id="projLoadBox">
+        <div class="proj-load-spinner"></div>
+        <div id="projLoadName"></div>
+        <div id="projLoadStep">Parsing map data and building road network…</div>
+        <div id="projLoadTimer">0s</div>
+        <div id="projLoadMeta"></div>
+        <button id="projLoadCancel">Cancel</button>
+    </div>
+</div>
+
+<input type="file" id="fileInput" accept=".osm,text/xml,application/xml" style="display:none" />
+
+<script type="module" src="index.js"></script>
+</body>
+</html>

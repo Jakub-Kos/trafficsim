@@ -1,0 +1,50 @@
+services:
+  backend:
+    image: ${IMAGE_REPO:-local}/trafficsim-backend:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9002:9002"
+    volumes:
+      - ./projects:/app/projects
+    environment:
+      POSTGRES_URL: "postgresql://trafficsim:trafficsim@db:5432/trafficsim"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: ${IMAGE_REPO:-local}/trafficsim-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  db:
+    image: ${IMAGE_REPO:-local}/trafficsim-db:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trafficsim
+      POSTGRES_PASSWORD: trafficsim
+      POSTGRES_DB: trafficsim
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trafficsim -d trafficsim"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

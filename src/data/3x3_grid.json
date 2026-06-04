@@ -1,0 +1,116 @@
+{
+  "nodes": [
+    { "id": 1, "pos": { "x": -100, "y": 100 } },
+    { "id": 2, "pos": { "x": 0, "y": 100 } },
+    { "id": 3, "pos": { "x": 100, "y": 100 } },
+    { "id": 4, "pos": { "x": -100, "y": 0 } },
+    { "id": 5, "pos": { "x": 0, "y": 0 } },
+    { "id": 6, "pos": { "x": 100, "y": 0 } },
+    { "id": 7, "pos": { "x": -100, "y": -100 } },
+    { "id": 8, "pos": { "x": 0, "y": -100 } },
+    { "id": 9, "pos": { "x": 100, "y": -100 } },
+    { "id": 100, "pos": { "x": -200, "y": 100 } },
+    { "id": 101, "pos": { "x": -100, "y": 200 } },
+    { "id": 102, "pos": { "x": 200, "y": 100 } },
+    { "id": 103, "pos": { "x": 100, "y": 200 } },
+    { "id": 104, "pos": { "x": -200, "y": -100 } },
+    { "id": 105, "pos": { "x": -100, "y": -200 } },
+    { "id": 106, "pos": { "x": 200, "y": -100 } },
+    { "id": 107, "pos": { "x": 100, "y": -200 } },
+    { "id": 108, "pos": { "x": 0, "y": 200 } },
+    { "id": 109, "pos": { "x": -200, "y": 0 } },
+    { "id": 110, "pos": { "x": 200, "y": 0 } },
+    { "id": 111, "pos": { "x": 0, "y": -200 } }
+  ],
+  "ways": [
+    { "id": 201, "nodes": [ 1, 2 ] },
+    { "id": 202, "nodes": [ 2, 3 ] },
+    { "id": 203, "nodes": [ 4, 5 ] },
+    { "id": 204, "nodes": [ 5, 6 ] },
+    { "id": 205, "nodes": [ 7, 8 ] },
+    { "id": 206, "nodes": [ 8, 9 ] },
+    { "id": 301, "nodes": [ 1, 4 ] },
+    { "id": 302, "nodes": [ 4, 7 ] },
+    { "id": 303, "nodes": [ 2, 5 ] },
+    { "id": 304, "nodes": [ 5, 8 ] },
+    { "id": 305, "nodes": [ 3, 6 ] },
+    { "id": 306, "nodes": [ 6, 9 ] },
+    { "id": 1001, "nodes": [ 100, 1 ] },
+    { "id": 1002, "nodes": [ 101, 1 ] },
+    { "id": 1003, "nodes": [ 102, 3 ] },
+    { "id": 1004, "nodes": [ 103, 3 ] },
+    { "id": 1005, "nodes": [ 104, 7 ] },
+    { "id": 1006, "nodes": [ 105, 7 ] },
+    { "id": 1007, "nodes": [ 106, 9 ] },
+    { "id": 1008, "nodes": [ 107, 9 ] },
+    { "id": 1009, "nodes": [ 108, 2 ] },
+    { "id": 1010, "nodes": [ 109, 4 ] },
+    { "id": 1011, "nodes": [ 110, 6 ] },
+    { "id": 1012, "nodes": [ 111, 8 ] }
+  ],
+  "spawnRegions": [
+    {
+      "regionId": "spawn_north_left",
+      "bounds": { "min": { "x": -110.0, "y": 190.0 }, "max": { "x": -90.0, "y": 210.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_north_mid",
+      "bounds": { "min": { "x": -10.0, "y": 190.0 }, "max": { "x": 10.0, "y": 210.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_north_right",
+      "bounds": { "min": { "x": 90.0, "y": 190.0 }, "max": { "x": 110.0, "y": 210.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+
+    {
+      "regionId": "spawn_east_top",
+      "bounds": { "min": { "x": 190.0, "y": 90.0 }, "max": { "x": 210.0, "y": 110.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_east_mid",
+      "bounds": { "min": { "x": 190.0, "y": -10.0 }, "max": { "x": 210.0, "y": 10.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_east_bottom",
+      "bounds": { "min": { "x": 190.0, "y": -110.0 }, "max": { "x": 210.0, "y": -90.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+
+    {
+      "regionId": "spawn_south_right",
+      "bounds": { "min": { "x": 90.0, "y": -210.0 }, "max": { "x": 110.0, "y": -190.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_south_mid",
+      "bounds": { "min": { "x": -10.0, "y": -210.0 }, "max": { "x": 10.0, "y": -190.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_south_left",
+      "bounds": { "min": { "x": -110.0, "y": -210.0 }, "max": { "x": -90.0, "y": -190.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+
+    {
+      "regionId": "spawn_west_bottom",
+      "bounds": { "min": { "x": -210.0, "y": -110.0 }, "max": { "x": -190.0, "y": -90.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_west_mid",
+      "bounds": { "min": { "x": -210.0, "y": -10.0 }, "max": { "x": -190.0, "y": 10.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_west_top",
+      "bounds": { "min": { "x": -210.0, "y": 90.0 }, "max": { "x": -190.0, "y": 110.0 } },
+      "spawnRatePerSec": 0.5, "vehicleTypeId": "default_car", "routePolicy": "random"
+    }
+  ]
+}

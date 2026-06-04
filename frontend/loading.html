@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Loading Map…</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --c-bg:      #080c12;
+            --c-panel:   rgba(6,10,20,0.92);
+            --c-border:  rgba(0,180,240,0.14);
+            --c-accent:  #00c8f0;
+            --c-ok:      #00e87a;
+            --c-text:    #b8d0e0;
+            --c-dim:     #3e5a6c;
+            --radius:    8px;
+        }
+
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            background: var(--c-bg); color: var(--c-text);
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 13px;
+            display: flex; flex-direction: column;
+        }
+
+        /* ── Top bar ────────────────────────────────────────────────── */
+        #topbar {
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 18px;
+            background: rgba(6,10,20,0.95);
+            border-bottom: 1px solid var(--c-border);
+            gap: 12px;
+        }
+        #topbar-left  { display: flex; align-items: center; gap: 14px; }
+        #topbar-right { display: flex; align-items: center; gap: 8px; }
+
+        #topbar a.back { color: var(--c-dim); text-decoration: none; font-size: 12px; }
+        #topbar a.back:hover { color: var(--c-text); }
+
+        #step-name {
+            font-size: 15px; font-weight: 600; color: #d8eaf8;
+        }
+        #step-desc {
+            font-size: 12px; color: var(--c-dim); max-width: 480px;
+        }
+
+        .btn {
+            padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
+            border: 1px solid; transition: all 0.15s;
+        }
+        #prevBtn {
+            background: rgba(255,255,255,0.03); border-color: var(--c-border);
+            color: var(--c-dim);
+        }
+        #prevBtn:hover:not(:disabled) { color: var(--c-text); border-color: rgba(0,180,240,0.35); }
+        #prevBtn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+        #nextBtn {
+            background: rgba(0,180,240,0.10); border-color: rgba(0,180,240,0.35);
+            color: var(--c-accent); font-weight: 600;
+        }
+        #nextBtn:hover:not(:disabled) { background: rgba(0,180,240,0.20); }
+        #nextBtn:disabled { opacity: 0.30; cursor: not-allowed; }
+
+        #startBtn {
+            background: rgba(0,230,120,0.12); border-color: rgba(0,230,120,0.40);
+            color: var(--c-ok); font-weight: 600; display: none;
+        }
+        #startBtn.visible { display: inline-block; }
+        #startBtn:hover { background: rgba(0,230,120,0.22); }
+
+        .auto-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--c-dim); cursor: pointer; user-select: none;
+        }
+        .auto-label input { accent-color: var(--c-accent); cursor: pointer; }
+
+        /* ── Canvas area ─────────────────────────────────────────────── */
+        #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+        #mapCanvas   { display: block; width: 100%; height: 100%; }
+
+        /* ── Step progress dots ──────────────────────────────────────── */
+        #progress-bar {
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; gap: 0;
+            padding: 10px 18px;
+            background: rgba(6,10,20,0.95);
+            border-top: 1px solid var(--c-border);
+            overflow-x: auto;
+        }
+        .step-dot-wrap {
+            display: flex; align-items: center;
+        }
+        .step-dot {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 1px solid var(--c-border);
+            background: rgba(255,255,255,0.03);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: var(--c-dim);
+            transition: all 0.25s; cursor: pointer; flex-shrink: 0;
+        }
+        .step-dot.done {
+            background: rgba(0,180,240,0.12);
+            border-color: rgba(0,200,255,0.35);
+            color: var(--c-accent);
+        }
+        .step-dot.current {
+            background: rgba(0,200,255,0.20);
+            border-color: rgba(0,200,255,0.65);
+            color: #fff;
+            box-shadow: 0 0 8px rgba(0,200,255,0.4);
+        }
+        .step-dot:hover { border-color: rgba(0,200,255,0.45); color: var(--c-text); }
+        .step-connector {
+            width: 24px; height: 1px; background: var(--c-border); flex-shrink: 0;
+        }
+        .step-dot-label {
+            display: none;
+        }
+
+        /* loading overlay */
+        #loadOverlay {
+            position: absolute; inset: 0;
+            background: var(--c-bg);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 16px; z-index: 5;
+        }
+        #loadOverlay.hidden { display: none; }
+        #loadOverlay .load-msg { font-size: 14px; color: var(--c-accent); }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid rgba(0,200,255,0.15);
+            border-top-color: var(--c-accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+
+        #errorMsg {
+            color: #f55; font-size: 13px; text-align: center;
+            padding: 0 24px; display: none;
+        }
+        #errorMsg.visible { display: block; }
+    </style>
+</head>
+<body>
+
+<div id="topbar">
+    <div id="topbar-left">
+        <a href="/" class="back">&larr; Back</a>
+        <div>
+            <div id="step-name">Loading…</div>
+            <div id="step-desc"></div>
+        </div>
+    </div>
+    <div id="topbar-right">
+        <label class="auto-label">
+            <input type="checkbox" id="autoPlay"> Auto-play
+        </label>
+        <button class="btn" id="prevBtn" disabled>&#8592; Prev</button>
+        <button class="btn" id="nextBtn" disabled>Next &#8594;</button>
+        <button class="btn" id="startBtn">&#9654; Start Simulation</button>
+    </div>
+</div>
+
+<div id="canvas-wrap">
+    <canvas id="mapCanvas"></canvas>
+    <div id="loadOverlay">
+        <div class="spinner"></div>
+        <div class="load-msg" id="loadMsg">Fetching map data…</div>
+        <div id="errorMsg"></div>
+    </div>
+</div>
+
+<div id="progress-bar"></div>
+
+<script type="module" src="loading.js"></script>
+</body>
+</html>

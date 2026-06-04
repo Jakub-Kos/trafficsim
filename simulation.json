@@ -1,0 +1,35 @@
+{
+  "mapFile": "src/data/map.osm",
+  "httpPort": 9001,
+  "wsPort": 9002,
+  "initialTimeScale": 1.0,
+
+  "mapParams": {
+    "defaultLaneWidth": 3.5,
+    "defaultSpeedLimit": 13.89,
+    "defaultIntersectionCurbRadius": 8.0,
+    "defaultTurnCurvatureWeight": 0.5
+  },
+
+  "broadcastFps": 30,
+  "debugBlockedReason": false,
+  "parkingDestinationProbability": 0.35,
+  "speedUpdateIntervalS": 5.0,
+  "routeCacheTtlS": 120.0,
+  "isectSnapshotIntervalS": 60.0,
+  "agentPoolCapacity": 16384,
+
+  "vehicleTypes": [
+    {
+      "typeId": "default_car",
+      "length": 4.5,
+      "maxSpeed": 15.0,
+      "acceleration": 2.5,
+      "deceleration": 4.0
+    }
+  ],
+
+  "routes": [],
+
+  "spawnRegions": []
+}

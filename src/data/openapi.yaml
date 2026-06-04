@@ -1,0 +1,1705 @@
+openapi: 3.0.3
+info:
+  title: Traffic Simulation Engine API
+  description: |
+    HTTP REST API for the C++23 traffic simulation engine.
+    Real-time vehicle state is streamed via WebSocket on port **9002** (see below).
+
+    ## WebSocket (ws://host:9002/)
+
+    The server pushes a JSON frame at ~30 fps. The payload mode is switched by
+    sending a `setStreamMode` command from the client.
+
+    **Server → client frame:**
+    ```json
+    {
+      "simTime": 42.3,
+      "timeScale": 2.0,
+      "stepMs": 5.2,
+      "maxTimeScale": 4.5,
+
+      "vehicles": [
+        { "id": 1, "x": 100.0, "y": 200.0, "h": 1.57, "speed": 8.3,
+          "acceleration": 0.1, "leaderId": -1, "gap": 12.5,
+          "parked": false, "timeUntilDeparture": 0.0 }
+      ],
+
+      "density": {
+        "minX": -500, "minY": -500, "maxX": 500, "maxY": 500,
+        "resX": 80, "resY": 60,
+        "cells": [0, 2, 1]
+      },
+
+      "laneStats": [
+        { "id": 123, "count": 5, "stuck": 2, "speed": 3.5 }
+      ],
+
+      "intersections": [
+        { "id": 12345, "locks": [{"c": 0, "a": 1}], "lights": [{"p": 0, "s": "green"}] }
+      ],
+      "metrics": {
+        "totalVehicles": 150, "vehiclesInQueue": 95,
+        "vehiclesInIntersection": 20, "yieldingVehicles": 5,
+        "avgSpeed": 8.2, "maxSpeed": 15.0, "avgGapToLeader": 12.5,
+        "totalSpawned": 500, "totalCompleted": 300,
+        "throughputPerMinute": 18.5, "avgTravelTime": 240.0
+      }
+    }
+    ```
+
+    **Client → server commands:**
+    ```json
+    { "cmd": "setSpeed",      "value": 1.5 }
+    { "cmd": "setViewport",   "minX": -1000, "minY": -1000, "maxX": 1000, "maxY": 1000 }
+    { "cmd": "setStreamMode", "mode": "agents" }
+    { "cmd": "setRoadClosed", "wayId": 12345, "isClosed": true }
+    { "cmd": "setVehicleRoute","vehicleId": 5, "routeId": "some_route_id" }
+    ```
+
+  version: 2.0.0
+
+servers:
+  - url: http://localhost:9001
+    description: Local dev server (direct)
+  - url: http://localhost:8080
+    description: Docker / nginx (proxies API, serves frontend on same port)
+
+tags:
+  - name: map
+    description: Static map geometry
+  - name: simulation
+    description: Simulation control — pause, speed, status
+  - name: vehicles
+    description: Per-vehicle queries and commands
+  - name: roads
+    description: Runtime road management
+  - name: metrics
+    description: Aggregated data, heatmaps, spawning, parking
+  - name: projects
+    description: Project CRUD and OSM file management
+  - name: runs
+    description: Analytics run lifecycle (DB required)
+  - name: analyses
+    description: Headless comparison studies (DB required)
+  - name: optimizer
+    description: Road-network optimizer — hill climbing, SA, GA (DB optional)
+  - name: sensitivity
+    description: Per-road DANC sensitivity analysis
+
+paths:
+
+  # ── MAP ──────────────────────────────────────────────────────────────────────
+
+  /map:
+    get:
+      tags: [map]
+      summary: Get full static map geometry
+      description: |
+        Returns the complete pre-built simulation graph (roads, lanes,
+        intersections, conflict points). Call once after page load and
+        cache client-side — this is a heavy response.
+      responses:
+        "200":
+          description: Map graph JSON
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapData"
+
+  /map/reset:
+    post:
+      tags: [map]
+      summary: Reload default map from simulation.json
+      description: Clears all agents and reloads the map path specified in `simulation.json`.
+      responses:
+        "200":
+          description: Map reloaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /map/reload:
+    post:
+      tags: [map]
+      summary: Reinitialize engine with new OSM data
+      description: |
+        Accepts raw OSM XML in the request body. Clears the current simulation
+        and rebuilds the world from the provided data.
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema:
+              type: string
+              description: Raw OSM XML
+      responses:
+        "200":
+          description: Map reloaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ── SIMULATION ───────────────────────────────────────────────────────────────
+
+  /simulation/project:
+    get:
+      tags: [simulation]
+      summary: Get the currently loaded project name
+      responses:
+        "200":
+          description: Project name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: { type: string, example: "Bratislava" }
+
+  /simulation/status:
+    get:
+      tags: [simulation]
+      summary: Get current simulation status
+      description: Returns sim time, time scale, step timing, and basic metrics without a WebSocket.
+      responses:
+        "200":
+          description: Current simulation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationStatus"
+
+  /simulation/speed:
+    put:
+      tags: [simulation]
+      summary: Set simulation time scale
+      description: |
+        Controls simulation speed. `0.0` pauses, `1.0` is real-time,
+        `2.0` is double-speed. Clamped to [0, 100].
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: number
+                  format: double
+                  minimum: 0.0
+                  maximum: 100.0
+                  example: 2.0
+      responses:
+        "200":
+          description: Speed updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [simulation]
+      summary: Set simulation time scale (legacy alias for PUT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: number, format: double, minimum: 0.0, maximum: 100.0 }
+      responses:
+        "200":
+          description: Speed updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ── VEHICLES ─────────────────────────────────────────────────────────────────
+
+  /vehicles:
+    get:
+      tags: [vehicles]
+      summary: Get vehicle states within a bounding box
+      description: |
+        Returns minimal state for all vehicles within the specified world-coordinate
+        bounding box. For real-time updates prefer the WebSocket stream.
+      parameters:
+        - name: minX
+          in: query
+          required: true
+          schema: { type: number, format: double }
+          example: -500.0
+        - name: minY
+          in: query
+          required: true
+          schema: { type: number, format: double }
+          example: -500.0
+        - name: maxX
+          in: query
+          required: true
+          schema: { type: number, format: double }
+          example: 500.0
+        - name: maxY
+          in: query
+          required: true
+          schema: { type: number, format: double }
+          example: 500.0
+      responses:
+        "200":
+          description: List of vehicle states
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VehicleState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /vehicle/detail:
+    get:
+      tags: [vehicles]
+      summary: Get detailed state for a single vehicle
+      description: |
+        Returns full debug state for one vehicle: hitbox, leader info,
+        controller state, route progress, and position history.
+        Used by the inspector panel.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: integer, format: int64 }
+          example: 42
+      responses:
+        "200":
+          description: Detailed vehicle state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailedVehicleState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /vehicle/route:
+    put:
+      tags: [vehicles]
+      summary: Reassign a vehicle to a different route
+      description: Dynamically changes the route a vehicle follows from its current position.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicleId, routeId]
+              properties:
+                vehicleId: { type: integer, format: int64, example: 42 }
+                routeId:   { type: string, example: "commute_north" }
+      responses:
+        "200":
+          description: Route updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── ROADS ────────────────────────────────────────────────────────────────────
+
+  /road/close:
+    put:
+      tags: [roads]
+      summary: Close or reopen a road segment
+      description: |
+        Closes or reopens an OSM way. Affected agents reroute; the route cache
+        is flushed. Takes effect immediately for newly spawned vehicles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wayId, isClosed]
+              properties:
+                wayId:    { type: integer, format: int64, description: OSM way ID, example: 12345678 }
+                isClosed: { type: boolean, example: true }
+      responses:
+        "200":
+          description: Road state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /road/closed:
+    get:
+      tags: [roads]
+      summary: List currently closed road IDs
+      responses:
+        "200":
+          description: Array of closed OSM way IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: integer, format: int64 }
+
+  # ── METRICS ──────────────────────────────────────────────────────────────────
+
+  /metrics:
+    get:
+      tags: [metrics]
+      summary: Get aggregated simulation metrics
+      description: Returns the latest snapshot of simulation-wide metrics.
+      responses:
+        "200":
+          description: Simulation metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationMetrics"
+
+  /heatmap:
+    get:
+      tags: [metrics]
+      summary: Get vehicle density heatmap (KDE grid)
+      description: Aggregates vehicle positions into a grid of cells within the bounding box.
+      parameters:
+        - name: minX
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: minY
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: maxX
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: maxY
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: resX
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 200 }
+          description: Grid columns
+        - name: resY
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 200 }
+          description: Grid rows
+      responses:
+        "200":
+          description: Flat cell array (row-major) with vehicle counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minX: { type: number }
+                  minY: { type: number }
+                  maxX: { type: number }
+                  maxY: { type: number }
+                  resX: { type: integer }
+                  resY: { type: integer }
+                  cells:
+                    type: array
+                    items: { type: integer }
+                    description: Vehicle count per cell, row-major order
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /heatmap/lanes:
+    get:
+      tags: [metrics]
+      summary: Get per-lane traffic statistics
+      description: Returns count, stuck-count, and average speed for every lane.
+      responses:
+        "200":
+          description: Per-lane stats array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:    { type: integer, format: int64, description: Lane ID }
+                    count: { type: integer, description: Vehicles currently on lane }
+                    stuck: { type: integer, description: Vehicles below 0.5 m/s }
+                    speed: { type: number, format: double, description: "Average speed in m/s" }
+
+  /spawning:
+    get:
+      tags: [metrics]
+      summary: Get spawning state
+      description: Returns whether spawning is globally enabled and per-region info.
+      responses:
+        "200":
+          description: Spawning info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  regions:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+    post:
+      tags: [metrics]
+      summary: Toggle vehicle spawning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200":
+          description: Spawning state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /parking/spots:
+    get:
+      tags: [metrics]
+      summary: Get all parking spot positions and occupancy
+      responses:
+        "200":
+          description: Parking spots array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:          { type: integer, format: int64 }
+                    x:           { type: number, format: double }
+                    y:           { type: number, format: double }
+                    heading:     { type: number, format: double }
+                    occupantId:  { type: integer, format: int64, description: "-1 if free" }
+
+  /intersections/positions:
+    get:
+      tags: [metrics]
+      summary: Get world positions of all intersections
+      responses:
+        "200":
+          description: Intersection positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer, format: int64 }
+                    x:  { type: number, format: double }
+                    y:  { type: number, format: double }
+
+  # ── PROJECTS ─────────────────────────────────────────────────────────────────
+
+  /projects:
+    get:
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMeta"
+    post:
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:        { type: string, example: "Bratislava" }
+                description: { type: string, example: "City center area" }
+      responses:
+        "200":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+        example: Bratislava
+    get:
+      tags: [projects]
+      summary: Get project metadata
+      responses:
+        "200":
+          description: Project metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMeta"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [projects]
+      summary: Update project metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:        { type: string }
+                description: { type: string }
+      responses:
+        "200":
+          description: Metadata updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [projects]
+      summary: Delete a project and all its files
+      responses:
+        "200":
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{name}/osm:
+    post:
+      tags: [projects]
+      summary: Upload and save an OSM file to a project
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/xml:
+            schema:
+              type: string
+              description: Raw OSM XML
+      responses:
+        "200":
+          description: OSM file saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{name}/osm/raw:
+    get:
+      tags: [projects]
+      summary: Download the raw OSM XML for a project
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Raw OSM XML
+          content:
+            application/xml:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{name}/load:
+    post:
+      tags: [projects]
+      summary: Load a project's map into the running simulation
+      description: Reads the project's `map.osm` and reinitializes the simulation engine.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Project loaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{name}/runs:
+    get:
+      tags: [projects, runs]
+      summary: List all analytics runs for a project
+      description: Returns all simulation_runs rows for the project, newest first. Requires DB.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Array of run records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SimulationRun"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /projects/{name}/analyses:
+    get:
+      tags: [projects, analyses]
+      summary: List all analyses for a project (with nested sessions)
+      description: Requires DB.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Array of analysis objects with nested sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Analysis"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  # ── RUNS ─────────────────────────────────────────────────────────────────────
+
+  /runs/start:
+    post:
+      tags: [runs]
+      summary: Start a new analytics run
+      description: |
+        Creates a run record in the DB and attaches the metrics collector to the live
+        simulation. Trip data is written to the DB until `/runs/:id/finish` is called.
+        Requires a project to be loaded and the DB to be available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runType]
+              properties:
+                runType:
+                  type: string
+                  enum: [baseline, scenario, optimization]
+                  example: baseline
+                label:
+                  type: string
+                  example: "Morning peak"
+      responses:
+        "200":
+          description: Run created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:            { type: boolean }
+                  runId:         { type: string }
+                  projectName:   { type: string }
+                  baselineRunId: { type: string, nullable: true }
+                  closedRoadIds: { type: array, items: { type: integer, format: int64 } }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /runs/active:
+    get:
+      tags: [runs]
+      summary: Get the currently active run ID
+      responses:
+        "200":
+          description: Active run state
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      active: { type: boolean, enum: [false] }
+                  - type: object
+                    properties:
+                      active:      { type: boolean, enum: [true] }
+                      runId:       { type: string }
+                      projectName: { type: string }
+
+  /runs/{id}/finish:
+    post:
+      tags: [runs]
+      summary: Finalize a run and compute fitness score
+      description: |
+        Detaches the metrics collector, computes DANC and fitness_score vs the
+        baseline, and marks the run as `completed` in the DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Run finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:    { type: boolean }
+                  runId: { type: string }
+
+  /runs/{id}/fail:
+    post:
+      tags: [runs]
+      summary: Mark a run as failed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Run marked as failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /runs/{id}/trips:
+    get:
+      tags: [runs]
+      summary: Get trip records for a run (capped at 5000)
+      description: Returns agent_trips rows for histogram display. Requires DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Array of trip records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentTrip"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  # ── ANALYSES ─────────────────────────────────────────────────────────────────
+
+  /analyses:
+    post:
+      tags: [analyses]
+      summary: Create a new analysis group
+      description: |
+        An analysis groups multiple headless sessions (baseline + scenarios) for
+        fair comparison. A shared RNG seed is generated once and used by all sessions.
+        Requires a project to be loaded and the DB to be available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: "Ring road closure study" }
+      responses:
+        "200":
+          description: Analysis created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:         { type: boolean }
+                  analysisId: { type: string }
+                  name:       { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /analyses/{id}:
+    delete:
+      tags: [analyses]
+      summary: Delete an analysis and cancel any running sessions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Analysis deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /analyses/{id}/sessions:
+    get:
+      tags: [analyses]
+      summary: List all sessions in an analysis
+      description: Requires DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Array of analysis session records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisSession"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /analysis/start:
+    post:
+      tags: [analyses]
+      summary: Start N parallel headless simulation runs for a session
+      description: |
+        Spawns `runCount` worker threads, each running a fresh `SimulationEngine`
+        as fast as possible (no WS broadcast, no 30 fps cap). Road closures from
+        the current simulation state are applied to all runs. Whether the session
+        is a baseline or scenario is determined automatically from `closedRoadIds`.
+        Requires DB and an OSM map to be loaded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analysisId]
+              properties:
+                analysisId:   { type: string }
+                label:        { type: string, example: "Baseline" }
+                runCount:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+                  default: 1
+                simDurationS:
+                  type: number
+                  minimum: 60
+                  maximum: 7200
+                  default: 3600
+                trafficMode:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:          { type: boolean }
+                  sessionId:   { type: string }
+                  runCount:    { type: integer }
+                  projectName: { type: string }
+                  analysisId:  { type: string }
+                  isBaseline:  { type: boolean }
+                  trafficMode: { type: string }
+                  simDurationS:{ type: number }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /analysis/{id}/status:
+    get:
+      tags: [analyses]
+      summary: Poll headless session progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Session ID returned by POST /analysis/start
+      responses:
+        "200":
+          description: Session progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:  { type: string }
+                  status:     { type: string, enum: [running, completed, unknown] }
+                  completed:  { type: integer, description: "Runs finished" }
+                  total:      { type: integer }
+                  pct:        { type: integer, description: "Overall progress 0–100" }
+                  runPcts:
+                    type: array
+                    items: { type: integer }
+                    description: Per-run progress percentages
+
+  /analysis/{id}:
+    delete:
+      tags: [analyses]
+      summary: Cancel a running session and delete its DB records
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session cancelled and deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /sessions/{id}/hotspots:
+    get:
+      tags: [analyses]
+      summary: Get top congestion intersections for a session
+      description: Returns intersection_snapshots aggregated by locked_conflicts. Requires DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Hotspot intersections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    intersectionId: { type: integer, format: int64 }
+                    totalConflicts: { type: integer }
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /sessions/{id}/trips:
+    get:
+      tags: [analyses]
+      summary: Get trip histogram data for a session (all runs merged)
+      description: Requires DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Trip records for the session
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentTrip"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  # ── OPTIMIZER ────────────────────────────────────────────────────────────────
+
+  /optimizer/problems:
+    get:
+      tags: [optimizer]
+      summary: List optimization problems for the loaded project
+      description: Returns problems stored in DB. Returns `[]` if DB is unavailable.
+      responses:
+        "200":
+          description: Problem list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OptimizationProblem"
+    post:
+      tags: [optimizer]
+      summary: Create or upsert an optimization problem
+      description: Requires a project to be loaded and DB to be available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  default: "Problem"
+                phaseCount:
+                  type: integer
+                  default: 2
+                  description: Number of construction phases
+                simDurationS:
+                  type: number
+                  default: 3600.0
+                trafficMode:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                scenarioType:
+                  type: string
+                  default: phased_construction
+                constraintThreshold:
+                  type: number
+                  default: 1.15
+                  description: Maximum allowed fitness ratio per phase
+                candidateItems:
+                  type: array
+                  description: Roads the optimizer may close. Each item is either an OSM way ID (integer) or `{k, w, i}` weight object.
+                  items:
+                    oneOf:
+                      - type: integer
+                        format: int64
+                      - type: object
+                        properties:
+                          k: { type: integer, format: int64, description: OSM way ID }
+                          w: { type: number, description: Relative weight }
+                          i: { type: boolean, description: Interchange flag }
+      responses:
+        "200":
+          description: Problem created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:        { type: boolean }
+                  problemId: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "503":
+          $ref: "#/components/responses/DBUnavailable"
+
+  /optimizer/problems/{id}:
+    delete:
+      tags: [optimizer]
+      summary: Delete an optimization problem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Problem deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+
+  /optimizer/problems/{id}/sessions:
+    get:
+      tags: [optimizer]
+      summary: List optimizer sessions for a problem (live + DB)
+      description: In-memory sessions take priority; completed sessions are read from DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OptimizerSessionStatus"
+
+  /optimizer/sessions:
+    get:
+      tags: [optimizer]
+      summary: List all currently in-memory optimizer sessions
+      responses:
+        "200":
+          description: Active sessions summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sessionId:   { type: string }
+                    problemId:   { type: string }
+                    algorithm:   { type: string }
+                    scenario:    { type: string }
+                    status:      { type: string }
+                    evalsDone:   { type: integer }
+                    totalEvals:  { type: integer }
+                    bestFitness: { type: number, nullable: true }
+    post:
+      tags: [optimizer]
+      summary: Start a new optimizer session
+      description: |
+        Fetches the problem from DB, copies the current OSM data, and launches
+        the algorithm in a detached thread. Algorithms: `hill_climbing`,
+        `simulated_annealing`, `genetic_algorithm`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [problemId]
+              properties:
+                problemId:      { type: string }
+                algorithm:
+                  type: string
+                  enum: [hill_climbing, simulated_annealing, genetic_algorithm]
+                  default: hill_climbing
+                maxIter:        { type: integer, default: 50 }
+                maxParallelSims:{ type: integer, minimum: 1, maximum: 16, default: 4 }
+                runsPerEval:    { type: integer, minimum: 1, maximum: 5, default: 1 }
+                teMult:         { type: number, default: 1.0, description: "DANC penalty multiplier" }
+                saT0:           { type: number, default: 0.10, description: "SA initial temperature" }
+                saTmin:         { type: number, default: 0.005, description: "SA minimum temperature" }
+                gaPopSize:      { type: integer, default: 20, description: "GA population size" }
+                gaMutProb:      { type: number, default: -1, description: "GA mutation probability (-1 = 1/N)" }
+                gaCrossProb:    { type: number, default: 0.9, description: "GA crossover probability" }
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:        { type: boolean }
+                  sessionId: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /optimizer/sessions/{id}/status:
+    get:
+      tags: [optimizer]
+      summary: Get live optimizer session status
+      description: Returns in-memory state if session is active, otherwise falls back to DB.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptimizerSessionStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /optimizer/sessions/{id}/pause:
+    post:
+      tags: [optimizer]
+      summary: Pause an optimizer session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /optimizer/sessions/{id}/resume:
+    post:
+      tags: [optimizer]
+      summary: Resume a paused optimizer session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /optimizer/sessions/{id}/cancel:
+    post:
+      tags: [optimizer]
+      summary: Cancel an optimizer session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── SENSITIVITY ──────────────────────────────────────────────────────────────
+
+  /sensitivity:
+    get:
+      tags: [sensitivity]
+      summary: List all active sensitivity sessions
+      responses:
+        "200":
+          description: Active sessions summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sessionId:  { type: string }
+                    status:     { type: string }
+                    totalRoads: { type: integer }
+                    roadsDone:  { type: integer }
+
+  /sensitivity/start:
+    post:
+      tags: [sensitivity]
+      summary: Start a per-road DANC sensitivity analysis
+      description: |
+        Runs a baseline simulation, then re-runs with each drivable road individually
+        closed to compute its marginal DANC impact. All runs share the same seed
+        for fair comparison. Results accumulate in-memory and are polled via
+        `/sensitivity/:id/status`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                simDurationS:
+                  type: number
+                  minimum: 60
+                  maximum: 7200
+                  default: 3600
+                maxParallel:
+                  type: integer
+                  minimum: 1
+                  maximum: 16
+                  default: 5
+                trafficMode:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:        { type: boolean }
+                  sessionId: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /sensitivity/{id}/status:
+    get:
+      tags: [sensitivity]
+      summary: Poll sensitivity session progress and results
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session status with per-road results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:       { type: string, enum: [loading, baseline, running, completed, cancelled, error] }
+                  totalRoads:   { type: integer }
+                  roadsDone:    { type: integer }
+                  baselineDone: { type: boolean }
+                  baselineDANC: { type: number }
+                  baselineS0:   { type: integer, format: int64 }
+                  avgBlTripS:   { type: number }
+                  etaSeconds:   { type: number, description: "Estimated seconds remaining (-1 = unknown)" }
+                  simDurS:      { type: number }
+                  maxParallel:  { type: integer }
+                  baselineResult:
+                    type: object
+                    properties:
+                      spawned:          { type: integer }
+                      completed:        { type: integer }
+                      completedTravelS: { type: number }
+                      simDurS:          { type: number }
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SensitivityRoadResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /sensitivity/{id}/cancel:
+    post:
+      tags: [sensitivity]
+      summary: Cancel a running sensitivity session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+# ── COMPONENTS ───────────────────────────────────────────────────────────────
+
+components:
+
+  schemas:
+
+    WorldPosition:
+      type: object
+      properties:
+        x: { type: number, format: double }
+        y: { type: number, format: double }
+
+    VehicleState:
+      type: object
+      properties:
+        id:                 { type: integer, format: int64 }
+        x:                  { type: number, format: double, description: "World X (metres)" }
+        y:                  { type: number, format: double, description: "World Y (metres)" }
+        h:                  { type: number, format: double, description: "Heading in radians" }
+        speed:              { type: number, format: double, description: "Speed in m/s" }
+        acceleration:       { type: number, format: double, description: "Acceleration in m/s²" }
+        leaderId:           { type: integer, format: int64, description: "-1 if no leader" }
+        gap:                { type: number, format: double, description: "Gap to leader in metres" }
+        parked:             { type: boolean }
+        timeUntilDeparture: { type: number, format: double }
+
+    DetailedVehicleState:
+      type: object
+      properties:
+        id:           { type: integer, format: int64 }
+        type:         { type: string, example: "default_car" }
+        speed:        { type: number, format: double }
+        acceleration: { type: number, format: double }
+        state:        { type: string, description: "Active controller name", example: "LaneDriving" }
+        lane:         { type: string, description: "Current lane ID" }
+        routeIdx:     { type: integer, description: "Current index into route" }
+        leaderId:     { type: integer, format: int64 }
+        gap:          { type: number, format: double }
+        headway:      { type: number, format: double, description: "Time headway in seconds" }
+        isYielding:   { type: boolean }
+        yieldingToId: { type: integer, format: int64 }
+        conflictPoint:
+          $ref: "#/components/schemas/WorldPosition"
+        hitbox:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorldPosition"
+        posHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorldPosition"
+
+    SimulationMetrics:
+      type: object
+      properties:
+        totalVehicles:          { type: integer }
+        vehiclesInQueue:        { type: integer, description: "Moving < 1 m/s" }
+        vehiclesInIntersection: { type: integer }
+        yieldingVehicles:       { type: integer }
+        avgSpeed:               { type: number, format: double, description: "m/s" }
+        maxSpeed:               { type: number, format: double, description: "m/s" }
+        avgGapToLeader:         { type: number, format: double, description: "metres" }
+        totalSpawned:           { type: integer, format: int64 }
+        totalCompleted:         { type: integer, format: int64 }
+        throughputPerMinute:    { type: number, format: double }
+        avgTravelTime:          { type: number, format: double, description: "seconds (rolling)" }
+
+    SimulationStatus:
+      type: object
+      properties:
+        simTime:      { type: number, format: double, description: "Elapsed sim time in seconds" }
+        timeScale:    { type: number, format: double }
+        stepMs:       { type: number, format: double, description: "Actual ms per sim step" }
+        maxTimeScale: { type: number, format: double, description: "Auto-throttled ceiling" }
+        metrics:
+          $ref: "#/components/schemas/SimulationMetrics"
+
+    MapData:
+      type: object
+      description: Full static map (roads, lanes, intersections, parking spots). Large — cache client-side.
+      additionalProperties: true
+
+    ProjectMeta:
+      type: object
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    SimulationRun:
+      type: object
+      properties:
+        runId:                    { type: string }
+        projectName:              { type: string }
+        runType:                  { type: string, enum: [baseline, scenario, optimization] }
+        label:                    { type: string }
+        status:                   { type: string, enum: [running, completed, failed] }
+        closedRoadIds:            { type: array, items: { type: integer, format: int64 } }
+        simDurationS:             { type: number, nullable: true }
+        vehiclesSpawned:          { type: integer, nullable: true }
+        vehiclesCompleted:        { type: integer, nullable: true }
+        completionRate:           { type: number, nullable: true }
+        totalExcessVehicleHours:  { type: number, nullable: true }
+        avgExcessTimePerTripS:    { type: number, nullable: true }
+        avgFreeflowAllSpawnedS:   { type: number, nullable: true }
+        dancScore:                { type: number, nullable: true }
+        fitnessScore:             { type: number, nullable: true, description: "dancScore / baseline. NULL for baseline runs." }
+        baselineRunId:            { type: string, nullable: true }
+
+    AgentTrip:
+      type: object
+      properties:
+        agentId:           { type: integer, format: int64 }
+        spawnTimeS:        { type: number }
+        completeTimeS:     { type: number }
+        actualTravelTimeS: { type: number }
+        freeflowEstimateS: { type: number }
+        excessTimeS:       { type: number }
+        rerouteCount:      { type: integer }
+
+    Analysis:
+      type: object
+      properties:
+        analysisId:   { type: string }
+        projectName:  { type: string }
+        name:         { type: string }
+        simSeed:      { type: integer, format: int64 }
+        createdAt:    { type: string, format: date-time }
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalysisSession"
+
+    AnalysisSession:
+      type: object
+      properties:
+        sessionId:               { type: string }
+        analysisId:              { type: string }
+        name:                    { type: string }
+        trafficMode:             { type: string, enum: [low, medium, high] }
+        runCount:                { type: integer }
+        simDurationS:            { type: number }
+        closedRoadIds:           { type: array, items: { type: integer, format: int64 } }
+        status:                  { type: string, enum: [running, completed, failed] }
+        isBaseline:              { type: boolean }
+        baselineSessionId:       { type: string, nullable: true }
+        avgFitnessScore:         { type: number, nullable: true }
+        avgExcessVehicleHours:   { type: number, nullable: true }
+        avgExcessTimePerTripS:   { type: number, nullable: true }
+        avgCompletionRate:       { type: number, nullable: true }
+        avgDancScore:            { type: number, nullable: true }
+        avgDancComparable:       { type: number, nullable: true }
+
+    OptimizationProblem:
+      type: object
+      properties:
+        problemId:           { type: string }
+        projectName:         { type: string }
+        name:                { type: string }
+        candidateRoadIds:    { type: array, items: {} }
+        phaseCount:          { type: integer }
+        simDurationS:        { type: number }
+        trafficMode:         { type: string }
+        scenarioType:        { type: string }
+        constraintThreshold: { type: number }
+        createdAt:           { type: string, format: date-time }
+
+    OptimizerSessionStatus:
+      type: object
+      properties:
+        status:             { type: string, enum: [running, paused, completed, failed, cancelled] }
+        algorithm:          { type: string }
+        scenario:           { type: string }
+        itersDone:          { type: integer }
+        evalsDone:          { type: integer }
+        totalEvals:         { type: integer }
+        baselineDANC:       { type: number }
+        bestFitness:        { type: number, nullable: true }
+        bestAssignment:     { type: array, items: { type: integer } }
+        phaseFitnesses:     { type: array, items: { type: number } }
+        phaseCount:         { type: integer }
+        threshold:          { type: number }
+        roadCount:          { type: integer }
+        bestClosedCount:    { type: integer }
+        etaSeconds:         { type: number, description: "-1 = unknown" }
+        convergenceHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              n:   { type: integer }
+              fit: { type: number }
+        recentEvals:
+          type: array
+          items:
+            type: object
+            properties:
+              n:    { type: integer }
+              ph:   { type: integer }
+              danc: { type: number, nullable: true }
+              ms:   { type: number }
+              lbl:  { type: string }
+
+    SensitivityRoadResult:
+      type: object
+      properties:
+        wayId:            { type: integer, format: int64 }
+        name:             { type: string }
+        danc:             { type: number }
+        fitness:          { type: number, description: "danc / baselineDANC — higher means closing this road hurts more" }
+        spawned:          { type: integer }
+        completed:        { type: integer }
+        completedTravelS: { type: number }
+        simDurS:          { type: number }
+        excludedCount:    { type: integer, description: "Vehicles that couldn't reach destination with this road closed" }
+
+    Ok:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: "missing required parameter: id" }
+        code:  { type: integer, example: 400 }
+
+  responses:
+    BadRequest:
+      description: Bad request — missing or invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: The requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    DBUnavailable:
+      description: Database is not connected — analytics features are unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

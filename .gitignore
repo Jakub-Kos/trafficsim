@@ -1,0 +1,10 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/src/build
+/cmake-build-debug/
+/build/
+/CMakeFiles/
+/.idea/
+/docs/doxygen/

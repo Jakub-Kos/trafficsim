@@ -1,0 +1,219 @@
+{
+  "nodes": [
+    {
+      "id": 1,
+      "pos": {
+        "x": -100,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "pos": {
+        "x": 100,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "pos": {
+        "x": 0,
+        "y": -100
+      }
+    },
+    {
+      "id": 4,
+      "pos": {
+        "x": 0,
+        "y": 100
+      }
+    },
+    {
+      "id": 5,
+      "pos": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 6,
+      "pos": {
+        "x": -200,
+        "y": 0
+      }
+    },
+    {
+      "id": 7,
+      "pos": {
+        "x": 200,
+        "y": 0
+      }
+    },
+    {
+      "id": 8,
+      "pos": {
+        "x": 0,
+        "y": -200
+      }
+    },
+    {
+      "id": 9,
+      "pos": {
+        "x": 0,
+        "y": 200
+      }
+    }
+  ],
+  "ways": [
+    {
+      "id": 101,
+      "nodes": [
+        1,
+        5
+      ]
+    },
+    {
+      "id": 102,
+      "nodes": [
+        5,
+        2
+      ]
+    },
+    {
+      "id": 103,
+      "nodes": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": 104,
+      "nodes": [
+        5,
+        3
+      ]
+    },
+    {
+      "id": 105,
+      "nodes": [
+        1,
+        4
+      ]
+    },
+    {
+      "id": 106,
+      "nodes": [
+        4,
+        2
+      ]
+    },
+    {
+      "id": 107,
+      "nodes": [
+        2,
+        3
+      ]
+    },
+    {
+      "id": 108,
+      "nodes": [
+        3,
+        1
+      ]
+    },
+    {
+      "id": 109,
+      "nodes": [
+        6,
+        1
+      ]
+    },
+    {
+      "id": 110,
+      "nodes": [
+        2,
+        7
+      ]
+    },
+    {
+      "id": 111,
+      "nodes": [
+        3,
+        8
+      ]
+    },
+    {
+      "id": 112,
+      "nodes": [
+        4,
+        9
+      ]
+    }
+  ],
+  "spawnRegions": [
+    {
+      "regionId": "spawn_far_west",
+      "bounds": {
+        "min": {
+          "x": -201.0,
+          "y": -10.0
+        },
+        "max": {
+          "x": -199.0,
+          "y": 10.0
+        }
+      },
+      "spawnRatePerSec": 0.5,
+      "vehicleTypeId": "default_car",
+      "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_far_south",
+      "bounds": {
+        "min": {
+          "x": -10.0,
+          "y": -201.0
+        },
+        "max": {
+          "x": 10.0,
+          "y": -199.0
+        }
+      },
+      "spawnRatePerSec": 0.5,
+      "vehicleTypeId": "default_car",
+      "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_far_north",
+      "bounds": {
+        "min": {
+          "x": -10.0,
+          "y": 199.0
+        },
+        "max": {
+          "x": 10.0,
+          "y": 201.0
+        }
+      },
+      "spawnRatePerSec": 0.5,
+      "vehicleTypeId": "default_car",
+      "routePolicy": "random"
+    },
+    {
+      "regionId": "spawn_far_east",
+      "bounds": {
+        "min": {
+          "x": 199.0,
+          "y": -10.0
+        },
+        "max": {
+          "x": 201.0,
+          "y": 10.0
+        }
+      },
+      "spawnRatePerSec": 0.5,
+      "vehicleTypeId": "default_car",
+      "routePolicy": "random"
+    }
+  ]
+}

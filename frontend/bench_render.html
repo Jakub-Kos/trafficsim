@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<!--
+  Frontend rendering benchmark (thesis Section 3.6.3).
+  Open in Chrome, then in Firefox. No server required.
+
+  What this replicates from the production render loop (main.js):
+    - Per-frame lerp of every vehicle's x, y, heading  (same formula as Smooth step)
+    - View-matrix recomputed from a slowly-panning viewport each frame
+    - renderer.render() call  →  bufferSubData + instanced draw call
+    - Canvas 2D clear (simulates overlay canvas that sits on top of WebGL)
+
+  Vehicles move continuously (random-walk velocity), so the instance buffer
+  contains different data every frame — no static-upload shortcut.
+
+  Start with python3 -m http.server 8080 --directory frontend
+  And then look at http://127.0.0.1:8080/bench_render.html
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Render Benchmark</title>
+  <style>
+    body { background: #080c12; color: #cce; font-family: monospace; padding: 16px; margin: 0; }
+    #wrap { position: relative; width: 800px; height: 500px; margin-bottom: 12px; }
+    canvas { position: absolute; top: 0; left: 0; width: 800px; height: 500px; }
+    #overlay { pointer-events: none; }
+    #log { white-space: pre; font-size: 13px; line-height: 1.6; }
+    .done { color: #4f9; }
+    .run  { color: #fe0; }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gl"      width="800" height="500"></canvas>
+  <canvas id="overlay" width="800" height="500"></canvas>
+</div>
+<div id="log">Initialising…</div>
+
+<script type="module">
+import { WebGLRenderer } from './renderer.js';
+
+const COUNTS        = [100, 500, 1000, 2000, 4096, 8192, 16384];
+const WARMUP_FRAMES = 60;
+const MEASURE_FRAMES = 300;
+
+// Logging
+const logEl = document.getElementById('log');
+logEl.textContent = '';
+function print(msg, cls = '') {
+    const d = document.createElement('div');
+    if (cls) d.className = cls;
+    d.textContent = msg;
+    logEl.appendChild(d);
+}
+
+// Renderer setup
+const glCanvas  = document.getElementById('gl');
+const overlayEl = document.getElementById('overlay');
+const ctx2d     = overlayEl.getContext('2d');
+const renderer  = new WebGLRenderer(glCanvas);
+
+// Minimal empty geometry so road/building draws are no-ops (count = 0)
+const noop = () => ({ buf: null, count: 0 });
+renderer._geom = {
+    bldg: noop(), surfT: noop(), markT: noop(),
+    surfN: noop(), markN: noop(), casingB: noop(),
+    surfB: noop(), markB: noop(), spawn: noop(),
+};
+
+// View-matrix helper (matches main.js buildViewMatrix)
+// 3×3 column-major affine: scale + translate so world coords map to NDC
+function buildViewMatrix(cx, cy, scale, W, H) {
+    // screen_ndc = (world - center) * scale / (W/2, H/2)
+    const sx =  2 * scale / W;
+    const sy = -2 * scale / H;  // y flipped
+    return new Float32Array([
+        sx, 0, 0,
+        0, sy, 0,
+        -cx * sx, -cy * sy, 1,
+    ]);
+}
+
+// Per-benchmark-run setup
+function makeState(n) {
+    // Each vehicle: { x, y, h, vx, vy, vh, a }
+    const WORLD = 300; // half-extent of world in metres
+    const states  = [];  // render state (lerped)
+    const targets = [];  // target (authoritative position, updated each tick)
+    for (let i = 0; i < n; i++) {
+        const x = (Math.random() - 0.5) * WORLD * 2;
+        const y = (Math.random() - 0.5) * WORLD * 2;
+        const h = Math.random() * Math.PI * 2;
+        states.push ({ id: i, x, y, h, a: 0, parked: false });
+        targets.push({ x, y, h,
+                       vx: (Math.random() - 0.5) * 4,   // m/frame
+                       vy: (Math.random() - 0.5) * 4,
+                       vh: (Math.random() - 0.5) * 0.05 });
+    }
+    return { states, targets, WORLD };
+}
+
+// Simulate one "server tick": move targets with wrap-around
+function moveTick({ targets, WORLD }) {
+    for (const t of targets) {
+        t.x += t.vx;
+        t.y += t.vy;
+        t.h += t.vh;
+        // wrap at world boundary
+        if (t.x >  WORLD) t.x -= WORLD * 2;
+        if (t.x < -WORLD) t.x += WORLD * 2;
+        if (t.y >  WORLD) t.y -= WORLD * 2;
+        if (t.y < -WORLD) t.y += WORLD * 2;
+    }
+}
+
+// Lerp render states toward targets (same formula as main.js "Smooth" step)
+const SMOOTH = 0.2;
+function lerpAngle(a, b, t) {
+    let d = b - a;
+    while (d >  Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return a + d * t;
+}
+function lerpStates({ states, targets }) {
+    for (let i = 0; i < states.length; i++) {
+        const s = states[i], tg = targets[i];
+        s.x = s.x + (tg.x - s.x) * SMOOTH;
+        s.y = s.y + (tg.y - s.y) * SMOOTH;
+        s.h = lerpAngle(s.h, tg.h, SMOOTH);
+    }
+}
+
+// Single benchmark run
+function benchCount(n) {
+    return new Promise(resolve => {
+        const state = makeState(n);
+
+        // Slowly-panning viewport (so the view matrix changes every frame)
+        let vpCx = 0, vpCy = 0;
+        const W = glCanvas.width, H = glCanvas.height;
+        const SCALE = 2.0; // pixels per metre
+        let frame = 0, t0 = 0;
+
+        function tick(now) {
+            // 1. Move targets (simulates arriving WS data)
+            moveTick(state);
+
+            // 2. Lerp render states (main.js "Smooth" step — O(N) JS)
+            lerpStates(state);
+
+            // 3. Animate viewport (so view matrix is never the same)
+            vpCx = Math.sin(frame * 0.01) * 50;
+            vpCy = Math.cos(frame * 0.013) * 30;
+            const viewMatrix = buildViewMatrix(vpCx, vpCy, SCALE, W, H);
+
+            // 4. WebGL render (bufferSubData + instanced draw call)
+            renderer.render(viewMatrix, state.states, -1, false);
+
+            // 5. Clear the 2D overlay canvas (always happens in production even when debug layers are off — ctx.clearRect is not free at 800×500)
+            ctx2d.clearRect(0, 0, W, H);
+
+            frame++;
+            if (frame === WARMUP_FRAMES) t0 = now;
+            if (frame < WARMUP_FRAMES + MEASURE_FRAMES) {
+                requestAnimationFrame(tick);
+            } else {
+                const elapsed = (now - t0) / 1000;
+                resolve(Math.round(MEASURE_FRAMES / elapsed));
+            }
+        }
+        requestAnimationFrame(tick);
+    });
+}
+
+// Main
+print(`Browser: ${navigator.userAgent}`);
+print('');
+print('Vehicles  |  FPS', 'done');
+print('----------+-------');
+
+(async () => {
+    const results = [];
+    for (const n of COUNTS) {
+        const line = document.createElement('div');
+        line.className = 'run';
+        line.textContent = `${String(n).padStart(6)}    |  measuring…`;
+        logEl.appendChild(line);
+
+        const fps = await benchCount(n);
+        line.className = 'done';
+        line.textContent = `${String(n).padStart(6)}    |  ${fps} FPS`;
+        results.push({ n, fps });
+    }
+
+    print('');
+    print('LaTeX rows:', 'done');
+    for (const r of results) {
+        print(`  ${r.n}  & ${r.fps} & -- \\\\`);
+    }
+    print('(replace -- with the value from the other browser)', 'run');
+})();
+</script>
+</body>
+</html>

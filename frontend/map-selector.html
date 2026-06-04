@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Map Selector — TrafficSim</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --c-bg:         #080c12;
+            --c-chrome:     #0d1117;
+            --c-dock:       #0d1117;
+            --c-dock-hdr:   #0a0f1a;
+            --c-border:     rgba(255,255,255,0.07);
+            --c-border-hi:  rgba(0,200,255,0.22);
+            --c-accent:     #00c8f0;
+            --c-ok:         #00e87a;
+            --c-danger:     #ff3355;
+            --c-warn:       #ffaa22;
+            --c-text:       #94a3b8;
+            --c-text-hi:    #cbd5e1;
+            --c-text-dim:   #334155;
+            --c-text-label: #5a7888;
+        }
+
+        html, body { width: 100%; height: 100%; overflow: hidden; background: var(--c-bg);
+            color: var(--c-text); font-family: system-ui, -apple-system, sans-serif;
+            font-size: 12px; display: flex; }
+
+        /* ── Left sidebar ──────────────────────────────────────────────── */
+        #sidebar {
+            width: 264px; flex-shrink: 0;
+            background: var(--c-dock); border-right: 1px solid var(--c-border);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        .dock-hdr {
+            height: 38px; padding: 0 14px;
+            display: flex; align-items: center; gap: 8px;
+            background: var(--c-chrome); border-bottom: 1px solid var(--c-border);
+            font-size: 13px; font-weight: 700; color: var(--c-text-hi); flex-shrink: 0;
+        }
+        .dock-hdr-logo { color: var(--c-accent); font-size: 16px; }
+
+        .nav-links {
+            display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+            padding: 8px 10px; border-bottom: 1px solid var(--c-border); flex-shrink: 0;
+        }
+        .nav-link {
+            padding: 3px 9px; border-radius: 4px; font-size: 11px;
+            color: var(--c-text-dim); text-decoration: none; border: 1px solid transparent;
+            transition: all 0.15s;
+        }
+        .nav-link:hover { color: var(--c-text-hi); border-color: var(--c-border); background: rgba(255,255,255,0.04); }
+
+        .sidebar-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+        .sidebar-body::-webkit-scrollbar { width: 4px; }
+        .sidebar-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+        .section { border-bottom: 1px solid var(--c-border); }
+        .section-hdr {
+            height: 28px; padding: 0 14px;
+            display: flex; align-items: center;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.7px;
+            text-transform: uppercase; color: var(--c-text-label);
+            background: var(--c-dock-hdr); border-bottom: 1px solid var(--c-border);
+        }
+        .section-body { padding: 10px 12px; }
+
+        .info-note {
+            font-size: 11px; color: var(--c-text-dim); line-height: 1.65;
+            padding: 10px 12px; border-bottom: 1px solid var(--c-border);
+        }
+        .info-note b { color: var(--c-text); }
+
+        /* Tile list section — must flex-grow so footer stays visible */
+        #tilesSection {
+            flex: 1; min-height: 0; overflow: hidden;
+            display: flex; flex-direction: column;
+        }
+        #tileList {
+            flex: 1; overflow-y: auto; min-height: 0;
+        }
+        #tileList::-webkit-scrollbar { width: 4px; }
+        #tileList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .tile-empty { padding: 12px; font-size: 11px; color: var(--c-text-dim); }
+        .tile-entry {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px; border-bottom: 1px solid var(--c-border);
+        }
+        .tile-entry:last-child { border-bottom: none; }
+        .tile-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .tile-dot.queued      { background: var(--c-text-dim); }
+        .tile-dot.downloading { background: var(--c-warn); animation: blink 0.7s infinite alternate; }
+        .tile-dot.ready       { background: var(--c-ok); }
+        .tile-dot.error       { background: var(--c-danger); }
+        @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
+        .tile-coords { flex: 1; font-family: monospace; font-size: 10px; color: var(--c-text-dim); }
+        .tile-remove { cursor: pointer; color: var(--c-text-dim); font-size: 14px; line-height: 1; user-select: none; }
+        .tile-remove:hover { color: var(--c-danger); }
+
+        /* Bottom action area */
+        .sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--c-border); display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+
+        #stats { font-family: monospace; font-size: 10px; color: var(--c-text-dim); }
+        #statusMsg { font-size: 11px; min-height: 15px; color: var(--c-warn); }
+        #statusMsg.ok  { color: var(--c-ok); }
+        #statusMsg.err { color: var(--c-danger); }
+
+        .action-btn {
+            padding: 7px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;
+            border: 1px solid; transition: all 0.15s; font-family: inherit; font-weight: 600;
+        }
+        #applyBtn {
+            background: rgba(0,232,122,0.08); border-color: rgba(0,232,122,0.3); color: var(--c-ok);
+        }
+        #applyBtn:hover:not(:disabled) { background: rgba(0,232,122,0.18); }
+        #applyBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+        #clearBtn {
+            background: transparent; border-color: var(--c-border); color: var(--c-text-dim);
+            font-weight: 400;
+        }
+        #clearBtn:hover { color: var(--c-danger); border-color: rgba(255,51,85,0.3); background: rgba(255,51,85,0.06); }
+
+        /* ── Map canvas ────────────────────────────────────────────────── */
+        #map-container { flex: 1; position: relative; overflow: hidden; }
+        #mapCanvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+        #zoomBtns {
+            position: absolute; top: 12px; right: 12px;
+            display: flex; flex-direction: column; gap: 4px; z-index: 5;
+        }
+        .zoom-btn {
+            width: 30px; height: 30px;
+            background: var(--c-chrome); border: 1px solid var(--c-border);
+            color: var(--c-text); font-size: 18px; line-height: 1;
+            border-radius: 4px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .zoom-btn:hover { background: rgba(0,200,240,0.12); border-color: var(--c-border-hi); color: var(--c-accent); }
+
+        /* ── Search bar ────────────────────────────────────────────────── */
+        #searchWrap {
+            padding: 8px 10px; border-bottom: 1px solid var(--c-border);
+            position: relative; flex-shrink: 0;
+        }
+        #searchInput {
+            width: 100%; padding: 6px 28px 6px 8px; border-radius: 4px;
+            background: rgba(0,0,0,0.4); border: 1px solid var(--c-border);
+            color: var(--c-text-hi); font-size: 11px; outline: none; font-family: inherit;
+            transition: border-color 0.15s;
+        }
+        #searchInput:focus { border-color: var(--c-border-hi); }
+        #searchInput::placeholder { color: var(--c-text-dim); }
+        #searchSpinner {
+            position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+            font-size: 11px; color: var(--c-text-dim); display: none;
+        }
+        #searchResults {
+            position: fixed;
+            background: var(--c-chrome); border: 1px solid var(--c-border-hi);
+            border-radius: 4px; z-index: 100; display: none;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+            max-height: 260px; overflow-y: auto;
+        }
+        .search-result {
+            padding: 7px 10px; font-size: 11px; cursor: pointer;
+            border-bottom: 1px solid var(--c-border); color: var(--c-text);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .search-result:last-child { border-bottom: none; }
+        .search-result:hover { background: rgba(0,200,240,0.10); color: var(--c-text-hi); }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="dock-hdr">
+        <span class="dock-hdr-logo">&#9678;</span> Map Selector
+    </div>
+
+    <div class="nav-links">
+        <a href="/"    class="nav-link">&#8592; Projects</a>
+        <a href="/app" class="nav-link">App</a>
+    </div>
+
+    <div id="searchWrap">
+        <input id="searchInput" type="text" placeholder="Search location…" autocomplete="off" spellcheck="false" />
+        <span id="searchSpinner">…</span>
+        <div id="searchResults"></div>
+    </div>
+
+    <div class="info-note">
+        <b>Click</b> a tile to toggle it.<br>
+        <b>Shift+drag</b> to select a rectangle of tiles at once.<br>
+        <b>Drag</b> to pan &nbsp;·&nbsp; <b>Scroll</b> to zoom.
+    </div>
+
+    <div class="section" id="tilesSection">
+        <div class="section-hdr">Selected Tiles</div>
+        <div id="tileList"><div class="tile-empty">No tiles selected yet.</div></div>
+    </div>
+
+    <div class="sidebar-footer">
+        <div id="stats"></div>
+        <div id="statusMsg"></div>
+        <button class="action-btn" id="applyBtn" disabled>&#8659; Download Tiles</button>
+        <button class="action-btn" id="loadBtn"  style="display:none; background:rgba(0,200,255,0.08); border-color:rgba(0,200,255,0.3); color:#0cf;">&#9654; Load into Simulation</button>
+        <button class="action-btn" id="clearBtn">Clear All</button>
+    </div>
+</div>
+
+<div id="map-container">
+    <canvas id="mapCanvas"></canvas>
+    <div id="zoomBtns">
+        <button class="zoom-btn" id="zoomIn">+</button>
+        <button class="zoom-btn" id="zoomOut">−</button>
+    </div>
+</div>
+
+<script type="module" src="map-selector.js"></script>
+</body>
+</html>
